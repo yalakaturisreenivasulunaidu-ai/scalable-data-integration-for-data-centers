@@ -1,0 +1,58 @@
+pipeline:
+  name: datacenter-telemetry-integration
+  max_workers: 4        # scale this up per available cores/nodes
+  batch_size: 200
+  retry_attempts: 3
+  retry_backoff_seconds: 2.0
+
+# Each source runs concurrently in its own worker.
+# Omit connection details to run any source/sink in built-in mock mode
+# (useful for a first run with zero external infrastructure).
+sources:
+  - name: server_metrics_db
+    type: database
+    options: {}
+      # connection_string: "postgresql://user:pass@db-host:5432/metrics"
+      # query: "SELECT * FROM server_metrics WHERE ts > now() - interval '1 hour'"
+
+  - name: rack_sensor_api
+    type: api
+    options: {}
+      # url: "https://sensors.internal.example.com/v1/racks"
+      # headers: { "Authorization": "Bearer <token>" }
+
+  - name: disk_io_logs
+    type: file
+    options: {}
+      # path: "/var/log/datacenter/disk_io.csv"
+      # format: csv
+
+transforms:
+  - name: require_core_fields
+    type: validate
+    options:
+      required_fields: ["id", "source", "metric", "value"]
+
+  - name: cast_numeric_value
+    type: type_cast
+    options:
+      casts:
+        value: float
+
+  - name: add_ingest_metadata
+    type: enrich
+    options:
+      tag: datacenter-integration-v1
+
+sinks:
+  - name: local_jsonl_sink
+    type: file
+    options:
+      path: "output/integrated_data.jsonl"
+
+  # Add a warehouse/database sink alongside (or instead of) the file sink:
+  # - name: warehouse_sink
+  #   type: warehouse
+  #   options:
+  #     connection_string: "postgresql://user:pass@warehouse-host:5432/analytics"
+  #     table: "integrated_data"
